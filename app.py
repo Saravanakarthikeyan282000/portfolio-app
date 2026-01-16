@@ -18,14 +18,9 @@ st.markdown("""
 @st.cache_data
 def load_data():
     try:
-        # 1. Load Rankings
-        rankings = pd.read_excel("data/25_Final_AHP_Ranking_5_1.xlsx")
-        
-        # 2. Load Monte Carlo Results
-        mc_results = pd.read_excel("data/26_Monte_Carlo_EWMA_Results.xlsx")
-        
-        # 3. Load Forecast Data (The 24-Month Predictions)
-        forecasts = pd.read_excel("data/13_Forecasted_Fund_NAV.xlsx")
+       rankings = pd.read_excel("25_Final_AHP_Ranking_5_1.xlsx")
+       mc_results = pd.read_excel("26_Monte_Carlo_EWMA_Results.xlsx")
+       forecasts = pd.read_excel("13_Forecasted_Fund_NAV.xlsx")
         
         # Clean column names
         rankings.columns = rankings.columns.str.strip()
