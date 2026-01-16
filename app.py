@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import norm
-import io
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Portfolio Optimization System", layout="wide")
@@ -89,46 +88,58 @@ def calculate_12m_forecast_sip(amc, scheme, monthly_sip):
     final_nav = monthly_data.iloc[-1]['Forecast_NAV']
     return units * final_nav
 
-def generate_bell_curve(curr_data, rec_data=None):
+def generate_bell_curve(curr_data, title_text="Probability Distribution", color_code='#00FFFF'):
     """
-    Generates a professional comparison chart.
-    Cyan = Recommended / Best
-    Red = Current (if inferior)
+    Generates a single Bell Curve with 3 Distinct Dots (P10, P50, P90).
     """
     fig = go.Figure()
 
-    # Plot Current Fund (Red)
+    # Data
     p50, p10, p90 = curr_data['P50'], curr_data['P10'], curr_data['P90']
+    
+    # Calculate Curve
     sigma = (p90 - p10) / 3.29 if p90 != p10 else p50 * 0.1
     x = np.linspace(p10 - sigma, p90 + sigma, 100)
     y = norm.pdf(x, p50, sigma)
     
+    # 1. The Curve Line
     fig.add_trace(go.Scatter(
-        x=x, y=y, mode='lines', name=f"Current: {curr_data['AMC']}", 
-        fill='tozeroy', line=dict(color='#FF4B4B', width=2), opacity=0.4
+        x=x, y=y, mode='lines', name='Distribution', 
+        fill='tozeroy', line=dict(color=color_code, width=2), opacity=0.4
     ))
 
-    # Plot Recommended Fund (Cyan) if distinct
-    if rec_data and rec_data['AMC'] != curr_data['AMC']:
-        p50r, p10r, p90r = rec_data['P50'], rec_data['P10'], rec_data['P90']
-        sigmar = (p90r - p10r) / 3.29 if p90r != p10r else p50r * 0.1
-        xr = np.linspace(p10r - sigmar, p90r + sigmar, 100)
-        yr = norm.pdf(xr, p50r, sigmar)
-        
-        fig.add_trace(go.Scatter(
-            x=xr, y=yr, mode='lines', name=f"Recommended: {rec_data['AMC']}", 
-            fill='tozeroy', line=dict(color='#00FFFF', width=3), opacity=0.6
-        ))
+    # 2. The 3 Dots (Markers)
+    # P10 (Pessimistic) - Red
+    fig.add_trace(go.Scatter(
+        x=[p10], y=[norm.pdf(p10, p50, sigma)],
+        mode='markers+text', text=['P10'], textposition="bottom center",
+        name='Pessimistic', marker=dict(color='#FF4B4B', size=12, symbol='circle')
+    ))
 
-    # Dark Mode Layout
+    # P50 (Expected) - Gold/White
+    fig.add_trace(go.Scatter(
+        x=[p50], y=[norm.pdf(p50, p50, sigma)],
+        mode='markers+text', text=['P50'], textposition="top center",
+        name='Expected', marker=dict(color='#FFFFFF', size=12, symbol='circle')
+    ))
+
+    # P90 (Optimistic) - Green
+    fig.add_trace(go.Scatter(
+        x=[p90], y=[norm.pdf(p90, p50, sigma)],
+        mode='markers+text', text=['P90'], textposition="bottom center",
+        name='Optimistic', marker=dict(color='#00FF00', size=12, symbol='circle')
+    ))
+
+    # Layout
     fig.update_layout(
-        title="Probabilistic Outcome Distribution",
+        title=dict(text=title_text, font=dict(size=14, color='#b0b0b0')),
         template="plotly_dark",
-        xaxis_title="Projected Corpus Value",
-        yaxis_title="Probability Density",
-        height=380,
-        margin=dict(l=20, r=20, t=50, b=20),
-        legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+        xaxis_title="Corpus Value (₹)",
+        yaxis_title="",
+        yaxis=dict(showticklabels=False),
+        height=300,
+        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=False,
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)'
     )
@@ -146,7 +157,7 @@ page = st.sidebar.radio("Select Module:", ["New Investment Analysis", "Existing 
 # =========================================================
 if page == "New Investment Analysis":
     st.title("New Investment Analysis")
-    st.markdown("Generate optimized portfolio recommendations based on Monte Carlo simulations and CNN-GRU forecasts.")
+    st.markdown("Generate optimized portfolio recommendations.")
     
     if df_mc.empty: st.stop()
 
@@ -200,15 +211,13 @@ if page == "New Investment Analysis":
                     # Metrics
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("Invested Capital", format_currency(invested))
-                    m2.metric("Projected Value (P50)", format_currency(p50))
+                    m2.metric("Expected (P50)", format_currency(p50))
                     m3.metric("Optimistic (P90)", format_currency(p90))
-                    m4.metric("Conservative (P10)", format_currency(p10))
+                    m4.metric("Pessimistic (P10)", format_currency(p10))
                     
-                    # Chart
+                    # Chart with 3 Dots
                     curr_data = {'AMC': amc, 'P50': p50, 'P10': p10, 'P90': p90}
-                    # For new investors, we only show the recommended curve (pass same data twice or handle in func)
-                    # We will reuse the comparison function but pass identical data to show single curve styled as 'Recommended'
-                    st.plotly_chart(generate_bell_curve(curr_data, curr_data), use_container_width=True)
+                    st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Projected Outcome: {amc}", color_code='#00FFFF'), use_container_width=True)
                     st.markdown("---")
 
 # =========================================================
@@ -229,9 +238,11 @@ elif page == "Existing Portfolio Rebalancing":
         for i in range(num_funds):
             with st.expander(f"Holding #{i+1}", expanded=True):
                 c1, c2, c3, c4 = st.columns(4)
+                
+                # Filter Schemes
                 sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
                 
-                # Dynamic AMC Filter
+                # Filter AMCs (Excluded pairs are already removed from df_mc in load_data)
                 avail_amcs = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
                 amc = c2.selectbox("AMC", avail_amcs, key=f"a_{i}")
                 
@@ -246,11 +257,8 @@ elif page == "Existing Portfolio Rebalancing":
         st.divider()
         st.subheader("Rebalancing Analysis Report")
         
-        report_data = [] # For CSV download
-        total_invested = 0
-        total_current_val = 0
-        total_optimized_val = 0
-
+        summary_table_data = [] # For final display
+        
         for fund in user_portfolio:
             # 1. FETCH CURRENT FUND DATA
             if fund['Tenure'] == 12:
@@ -283,74 +291,69 @@ elif page == "Existing Portfolio Rebalancing":
                 best_amc = fund['AMC']
                 b_p50, b_p10, b_p90 = c_p50, c_p10, c_p90
 
-            # 3. ANALYSIS LOGIC
+            # 3. LOGIC: Compare Current vs Best
             invested = fund['Amount'] * fund['Tenure']
             gain = b_p50 - c_p50
-            action = "HOLD"
             
-            if fund['AMC'] == best_amc:
-                action = "HOLD (Top Ranked)"
-            elif gain > 0:
+            # Logic: If Current is NOT the best, and Best offers gain -> Rebalance
+            if fund['AMC'] != best_amc and gain > 0:
                 action = "REBALANCE"
+                action_color = "#FF4B4B" # Red warning
             else:
-                action = "HOLD (No Better Alternative)"
+                action = "HOLD"
+                action_color = "#00FFFF" # Cyan success
+                gain = 0 # No gain if holding
 
-            # Accumulate Totals
-            total_invested += invested
-            total_current_val += c_p50
-            total_optimized_val += b_p50
+            # 4. DISPLAY: Holding Header
+            st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']} - {fund['AMC']}")
             
-            # Store Data for CSV
-            report_data.append({
-                "Holding ID": fund['id'],
-                "Scheme": fund['Scheme'],
-                "Current AMC": fund['AMC'],
-                "Recommended AMC": best_amc,
-                "Action": action,
-                "Invested": invested,
-                "Current Projected": c_p50,
-                "Optimized Projected": b_p50,
-                "Potential Gain": gain
-            })
+            # Metrics
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Action", action)
+            col_m2.metric("Best Alternative", best_amc)
+            col_m3.metric("Potential Gain", format_currency(gain))
 
-            # 4. DISPLAY INDIVIDUAL ANALYSIS
-            st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']}")
-            col_metrics, col_graph = st.columns([1, 2])
+            # 5. SIDEWAYS GRAPHS (Comparison)
+            col_g1, col_g2 = st.columns(2)
             
-            with col_metrics:
-                st.write(f"Current: **{fund['AMC']}**")
-                st.write(f"Top Ranked: **{best_amc}**")
+            with col_g1:
+                # Current Graph (Red if Rebalance, Cyan if Hold)
+                curr_data = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
+                graph_color = '#FF4B4B' if action == "REBALANCE" else '#00FFFF'
+                st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Current: {fund['AMC']}", color_code=graph_color), use_container_width=True)
                 
-                st.metric("Action", action)
+            with col_g2:
+                # Recommended Graph (Always Cyan/Green) - Only show if different
                 if action == "REBALANCE":
-                    st.metric("Potential Gain", format_currency(gain), delta="Optimization Benefit")
-                
-            with col_graph:
-                curr_dict = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
-                rec_dict = {'AMC': best_amc, 'P50': b_p50, 'P10': b_p10, 'P90': b_p90}
-                st.plotly_chart(generate_bell_curve(curr_dict, rec_dict), use_container_width=True)
-            
+                    rec_data = {'AMC': best_amc, 'P50': b_p50, 'P10': b_p10, 'P90': b_p90}
+                    st.plotly_chart(generate_bell_curve(rec_data, title_text=f"Proposed: {best_amc}", color_code='#00FF00'), use_container_width=True)
+                else:
+                    st.info("Your current fund is the top performer in this category.")
+
             st.markdown("---")
 
-        # 5. FINAL SUMMARY SECTION
-        st.subheader("Consolidated Portfolio Summary")
-        
-        sum_c1, sum_c2, sum_c3 = st.columns(3)
-        sum_c1.metric("Total Invested Capital", format_currency(total_invested))
-        sum_c2.metric("Current Portfolio Projection", format_currency(total_current_val))
-        
-        net_gain = total_optimized_val - total_current_val
-        sum_c3.metric("Optimized Portfolio Projection", format_currency(total_optimized_val), delta=format_currency(net_gain))
+            # Add to Summary Table Data
+            summary_table_data.append({
+                "Holding #": fund['id'],
+                "Current AMC": fund['AMC'],
+                "Scheme": fund['Scheme'],
+                "Action": action,
+                "Rebalance To": best_amc if action == "REBALANCE" else "-",
+                "Potential Gain": format_currency(gain)
+            })
 
-        # 6. DOWNLOAD REPORT
-        st.subheader("Export Analysis")
-        csv_df = pd.DataFrame(report_data)
-        csv = convert_df_to_csv(csv_df)
-        
-        st.download_button(
-            label="DOWNLOAD FULL REPORT (CSV)",
-            data=csv,
-            file_name='portfolio_rebalancing_report.csv',
-            mime='text/csv',
-            type="primary"
-        )
+        # 6. FINAL SUMMARY TABLE
+        st.subheader("Final Portfolio Summary")
+        if summary_table_data:
+            summary_df = pd.DataFrame(summary_table_data)
+            st.dataframe(summary_df, use_container_width=True)
+            
+            # Download Button
+            csv = convert_df_to_csv(summary_df)
+            st.download_button(
+                label="DOWNLOAD REPORT (CSV)",
+                data=csv,
+                file_name='portfolio_rebalancing_report.csv',
+                mime='text/csv',
+                type="primary"
+            )
