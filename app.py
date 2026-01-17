@@ -52,6 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- CONFIG: EXCLUDED PAIRS ---
+# These pairs will be stripped from the data entirely
 EXCLUDED_PAIRS = [
     ('Mirae', 'Smallcap'), ('Franklin', 'Multicap'), ('DSP', 'Multicap'),
     ('Kotak', 'Pharmafund'), ('HDFC', 'Pharmafund'), ('Mirae', 'Multicap'),
@@ -134,28 +135,31 @@ def convert_df_to_csv(df):
 
 # --- MAIN NAVIGATION ---
 st.sidebar.title("System Navigation")
-page = st.sidebar.radio("Select Module:", ["First-Time Investor", "Existing Portfolio"])
+page = st.sidebar.radio("Select Module:", ["New Investment Analysis", "Existing Portfolio Rebalancing"])
 
 # =========================================================
 # MODULE 1: NEW INVESTMENT
 # =========================================================
-if page == "First-Time Investor":
-    st.title("First-Time Investor")
+if page == "New Investment Analysis":
+    st.title("New Investment Analysis")
     st.markdown("Generate optimized portfolio recommendations.")
     if df_mc.empty: st.stop()
 
-    st.subheader("Investment Parameters")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        schemes = sorted(df_mc['Scheme'].unique())
-        sel_scheme = st.selectbox("Scheme Category", schemes)
-    with c2:
-        amounts = sorted(df_mc['SIP_Amount'].unique())
-        sel_sip = st.selectbox("Monthly SIP Amount", amounts, index=amounts.index(5000) if 5000 in amounts else 0)
-    with c3:
-        sel_duration = st.selectbox("Duration (Months)", [12, 24, 36])
-    with c4:
-        sel_top_n = st.selectbox("Recommendations Count", [1, 2, 3, 4, 5], index=0)
+    # INPUT SECTION
+    with st.container():
+        st.subheader("Investment Parameters")
+        c1, c2, c3, c4 = st.columns(4)
+        
+        with c1:
+            schemes = sorted(df_mc['Scheme'].unique())
+            sel_scheme = st.selectbox("Scheme Category", schemes)
+        with c2:
+            amounts = sorted(df_mc['SIP_Amount'].unique())
+            sel_sip = st.selectbox("Monthly SIP Amount", amounts, index=amounts.index(5000) if 5000 in amounts else 0)
+        with c3:
+            sel_duration = st.selectbox("Duration (Months)", [12, 24, 36])
+        with c4:
+            sel_top_n = st.selectbox("Recommendations Count", [1, 2, 3, 4, 5], index=0)
 
     if st.button("RUN ANALYSIS", type="primary"):
         st.divider()
@@ -187,10 +191,10 @@ if page == "First-Time Investor":
                     st.markdown("---")
 
 # =========================================================
-# MODULE 2: EXISTING PORTFOLIO 
+# MODULE 2: EXISTING PORTFOLIO REBALANCING
 # =========================================================
-elif page == "Existing Portfolio":
-    st.title("Existing Portfolio")
+elif page == "Existing Portfolio Rebalancing":
+    st.title("Existing Portfolio Rebalancing")
     st.markdown("Comparative analysis: Checks if a better performing fund exists for your exact parameters.")
     if df_mc.empty: st.stop()
 
@@ -295,7 +299,7 @@ elif page == "Existing Portfolio":
 
             # 4. DISPLAY
             st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']} - {fund['AMC']}")
-            st.caption(f"Analysis parameters: {format_currency(fund['Amount'])} SIP for {fund['Tenure']} Months") # Explicit Confirmation
+            st.caption(f"Analysis parameters: {format_currency(fund['Amount'])} SIP for {fund['Tenure']} Months")
             
             c_m1, c_m2, c_m3 = st.columns(3)
             c_m1.metric("Recommendation", action)
