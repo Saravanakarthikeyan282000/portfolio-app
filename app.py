@@ -11,16 +11,19 @@ st.set_page_config(page_title="Portfolio Optimization System", layout="wide")
 # --- PROFESSIONAL STYLING (DARK MODE + CYAN) ---
 st.markdown("""
     <style>
-    /* Global Text Color */
+    /* Global Text Color & Background */
     body { color: #e0e0e0; background-color: #0e1117; }
     
-    /* Headers - Cyan Accent */
-    h1, h2, h3, h4 { color: #00FFFF !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    /* Headers - Cyan Accent & Uniform Size */
+    h1 { color: #00FFFF !important; font-size: 2.5rem !important; font-family: 'Helvetica Neue', sans-serif; }
+    h2 { color: #00FFFF !important; font-size: 1.8rem !important; }
+    h3 { color: #00FFFF !important; font-size: 1.4rem !important; }
+    h4 { color: #e0e0e0 !important; font-size: 1.2rem !important; font-weight: 600; }
     
-    /* Metric Boxes */
-    div[data-testid="stMetricValue"] { color: #00FFFF !important; font-weight: bold; }
-    div[data-testid="stMetricLabel"] { color: #b0b0b0 !important; }
-    .stMetric { background-color: #262730; border: 1px solid #464b5c; border-radius: 5px; padding: 10px; }
+    /* Metric Boxes - Uniform Styling */
+    div[data-testid="stMetricValue"] { color: #00FFFF !important; font-size: 1.4rem !important; font-weight: bold; }
+    div[data-testid="stMetricLabel"] { color: #b0b0b0 !important; font-size: 1rem !important; }
+    .stMetric { background-color: #262730; border: 1px solid #464b5c; border-radius: 8px; padding: 15px; }
     
     /* Input Fields */
     .stSelectbox label, .stNumberInput label { color: #00FFFF !important; font-weight: bold; }
@@ -40,19 +43,19 @@ st.markdown("""
         background-color: #0e1117;
         color: #00FFFF;
         text-align: center;
-        padding: 10px;
+        padding: 12px;
         font-weight: bold;
         border-top: 1px solid #464b5c;
         z-index: 100;
+        font-size: 0.9rem;
     }
     
     /* Expander Styling */
-    .streamlit-expanderHeader { color: #ffffff; font-weight: bold; background-color: #262730; }
+    .streamlit-expanderHeader { color: #ffffff; font-weight: bold; background-color: #262730; font-size: 1.1rem; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- CONFIG: EXCLUDED PAIRS ---
-# These pairs will be stripped from the data entirely
 EXCLUDED_PAIRS = [
     ('Mirae', 'Smallcap'), ('Franklin', 'Multicap'), ('DSP', 'Multicap'),
     ('Kotak', 'Pharmafund'), ('HDFC', 'Pharmafund'), ('Mirae', 'Multicap'),
@@ -72,17 +75,17 @@ def load_data():
         mc_results.columns = mc_results.columns.str.strip()
         forecasts.columns = forecasts.columns.str.strip()
         
-        # 2. Clean Data Content (Strip Spaces)
+        # 2. Clean Data Content
         mc_results['Scheme'] = mc_results['Scheme'].astype(str).str.strip()
         mc_results['AMC'] = mc_results['AMC'].astype(str).str.strip()
         
-        # 3. Force Numbers to Integers (Prevents lookup errors)
+        # 3. Force Numbers to Integers
         mc_results['SIP_Amount'] = pd.to_numeric(mc_results['SIP_Amount'], errors='coerce').fillna(0).astype(int)
         mc_results['Tenure_Months'] = pd.to_numeric(mc_results['Tenure_Months'], errors='coerce').fillna(0).astype(int)
         
         forecasts['Date'] = pd.to_datetime(forecasts['Date'])
         
-        # 4. Filter Exclusions (The Critical Step)
+        # 4. Filter Exclusions
         for amc, scheme in EXCLUDED_PAIRS:
             rankings = rankings[~((rankings['AMC'] == amc) & (rankings['Scheme'] == scheme))]
             mc_results = mc_results[~((mc_results['AMC'] == amc) & (mc_results['Scheme'] == scheme))]
@@ -120,14 +123,28 @@ def generate_bell_curve(curr_data, title_text="Probability Distribution", color_
     x = np.linspace(p10 - sigma, p90 + sigma, 100)
     y = norm.pdf(x, p50, sigma)
     
-    fig.add_trace(go.Scatter(x=x, y=y, mode='lines', fill='tozeroy', line=dict(color=color_code, width=2), opacity=0.4))
-    fig.add_trace(go.Scatter(x=[p10], y=[norm.pdf(p10,p50,sigma)], mode='markers+text', text=['P10'], textposition="bottom center", marker=dict(color='#FF4B4B', size=10)))
-    fig.add_trace(go.Scatter(x=[p50], y=[norm.pdf(p50,p50,sigma)], mode='markers+text', text=['P50'], textposition="top center", marker=dict(color='#FFFFFF', size=10)))
-    fig.add_trace(go.Scatter(x=[p90], y=[norm.pdf(p90,p50,sigma)], mode='markers+text', text=['P90'], textposition="bottom center", marker=dict(color='#00FF00', size=10)))
+    # Area Chart
+    fig.add_trace(go.Scatter(
+        x=x, y=y, mode='lines', fill='tozeroy', 
+        line=dict(color=color_code, width=2), opacity=0.4, hoverinfo='skip'
+    ))
     
-    fig.update_layout(title=dict(text=title_text, font=dict(size=14, color='#b0b0b0')), template="plotly_dark", 
-                      xaxis_title="Corpus Value (₹)", yaxis=dict(showticklabels=False), height=300, showlegend=False, 
-                      plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    # Markers (Dots)
+    fig.add_trace(go.Scatter(x=[p10], y=[norm.pdf(p10,p50,sigma)], mode='markers+text', text=['P10'], textposition="bottom center", marker=dict(color='#FF4B4B', size=10), name='Pessimistic'))
+    fig.add_trace(go.Scatter(x=[p50], y=[norm.pdf(p50,p50,sigma)], mode='markers+text', text=['P50'], textposition="top center", marker=dict(color='#FFFFFF', size=10), name='Expected'))
+    fig.add_trace(go.Scatter(x=[p90], y=[norm.pdf(p90,p50,sigma)], mode='markers+text', text=['P90'], textposition="bottom center", marker=dict(color='#00FF00', size=10), name='Optimistic'))
+    
+    fig.update_layout(
+        title=dict(text=title_text, font=dict(size=14, color='#b0b0b0')), 
+        template="plotly_dark", 
+        xaxis_title="Corpus Value (₹)", 
+        yaxis=dict(showticklabels=False), 
+        height=350,  # Increased height to prevent overlap
+        margin=dict(l=20, r=20, t=50, b=20),
+        showlegend=False, 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
     return fig
 
 def convert_df_to_csv(df):
@@ -135,21 +152,19 @@ def convert_df_to_csv(df):
 
 # --- MAIN NAVIGATION ---
 st.sidebar.title("System Navigation")
-page = st.sidebar.radio("Select Module:", ["New Investment Analysis", "Existing Portfolio Rebalancing"])
+page = st.sidebar.radio("Select Module:", ["First-time Investor", "Existing Investor Portfolio"])
 
 # =========================================================
 # MODULE 1: NEW INVESTMENT
 # =========================================================
-if page == "New Investment Analysis":
-    st.title("New Investment Analysis")
+if page == "First-time Investor":
+    st.title("First-time Investor")
     st.markdown("Generate optimized portfolio recommendations.")
     if df_mc.empty: st.stop()
 
-    # INPUT SECTION
     with st.container():
         st.subheader("Investment Parameters")
         c1, c2, c3, c4 = st.columns(4)
-        
         with c1:
             schemes = sorted(df_mc['Scheme'].unique())
             sel_scheme = st.selectbox("Scheme Category", schemes)
@@ -186,6 +201,7 @@ if page == "New Investment Analysis":
                     m2.metric("Expected (P50)", format_currency(p50))
                     m3.metric("Optimistic (P90)", format_currency(p90))
                     m4.metric("Pessimistic (P10)", format_currency(p10))
+                    
                     curr_data = {'AMC': amc, 'P50': p50, 'P10': p10, 'P90': p90}
                     st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Projected Outcome: {amc}", color_code='#00FFFF'), use_container_width=True)
                     st.markdown("---")
@@ -193,8 +209,8 @@ if page == "New Investment Analysis":
 # =========================================================
 # MODULE 2: EXISTING PORTFOLIO REBALANCING
 # =========================================================
-elif page == "Existing Portfolio Rebalancing":
-    st.title("Existing Portfolio Rebalancing")
+elif page == "Existing Investor Portfolio":
+    st.title("Existing Investor Portfolio")
     st.markdown("Comparative analysis: Checks if a better performing fund exists for your exact parameters.")
     if df_mc.empty: st.stop()
 
@@ -202,22 +218,17 @@ elif page == "Existing Portfolio Rebalancing":
     user_portfolio = []
     
     st.subheader("Portfolio Composition")
-    # NO FORM -> This enables real-time updates for Dropdowns
     for i in range(num_funds):
         with st.expander(f"Holding #{i+1}", expanded=True):
             c1, c2, c3, c4 = st.columns(4)
-            
-            # 1. Select Scheme
             sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
             
-            # 2. DYNAMIC FILTER: Get AMCs strictly for this Scheme from cleaned data
-            valid_amcs_for_scheme = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
-            
-            if not valid_amcs_for_scheme:
+            valid_amcs = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
+            if not valid_amcs:
                 amc = None
                 c2.error("No AMCs found.")
             else:
-                amc = c2.selectbox("AMC", valid_amcs_for_scheme, key=f"a_{i}")
+                amc = c2.selectbox("AMC", valid_amcs, key=f"a_{i}")
             
             amt = c3.selectbox("SIP Amount", sorted(df_mc['SIP_Amount'].unique()), index=9, key=f"m_{i}")
             ten = c4.selectbox("Tenure", [12, 24, 36], index=1, key=f"t_{i}")
@@ -248,7 +259,7 @@ elif page == "Existing Portfolio Rebalancing":
                 c_p10 = row.iloc[0]['P10_Corpus'] if not row.empty else 0
                 c_p90 = row.iloc[0]['P90_Corpus'] if not row.empty else 0
 
-            # 2. FIND THE WINNER (Dynamic Calculation based on Amount & Tenure)
+            # 2. FIND WINNER
             best_amc = fund['AMC']
             b_p50, b_p10, b_p90 = c_p50, c_p10, c_p90
             
@@ -263,13 +274,11 @@ elif page == "Existing Portfolio Rebalancing":
                         b_p50 = val
                         b_p10, b_p90 = val * 0.95, val * 1.05
             else:
-                # DYNAMIC LOOKUP: Find max P50 for this SPECIFIC Amount/Tenure
                 cohort = df_mc[
                     (df_mc['Scheme'] == fund['Scheme']) & 
                     (df_mc['SIP_Amount'] == int(fund['Amount'])) & 
                     (df_mc['Tenure_Months'] == int(fund['Tenure']))
                 ]
-                
                 if not cohort.empty:
                     best_row = cohort.loc[cohort['P50_Corpus'].idxmax()]
                     if best_row['P50_Corpus'] > c_p50:
@@ -278,17 +287,14 @@ elif page == "Existing Portfolio Rebalancing":
                         b_p10 = best_row['P10_Corpus']
                         b_p90 = best_row['P90_Corpus']
 
-            # 3. DECISION LOGIC
+            # 3. DECISION
             gain = b_p50 - c_p50
-            
             if gain > 50 and best_amc != fund['AMC']: 
                 action = "REBALANCE"
-                action_color = "#FF4B4B" 
                 display_best_amc = best_amc
                 display_gain = format_currency(gain)
             else:
                 action = "HOLD"
-                action_color = "#00FFFF"
                 gain = 0
                 display_best_amc = "Not Required"
                 display_gain = "-"
@@ -307,7 +313,8 @@ elif page == "Existing Portfolio Rebalancing":
             c_m3.metric("Projected Gain", display_gain)
 
             if action == "REBALANCE":
-                g1, g2 = st.columns(2)
+                # Wider columns to prevent chart overlapping
+                g1, g2 = st.columns([1, 1]) 
                 with g1:
                     st.plotly_chart(generate_bell_curve({'AMC':fund['AMC'],'P50':c_p50,'P10':c_p10,'P90':c_p90}, title_text=f"Current: {fund['AMC']}", color_code='#FF4B4B'), use_container_width=True)
                 with g2:
