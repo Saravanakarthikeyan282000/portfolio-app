@@ -51,20 +51,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIG: STRICT EXCLUSIONS ---
-# These pairs will be completely purged from the app's memory
+# --- CONFIG: EXCLUDED PAIRS ---
+# These pairs will be stripped from the data entirely
 EXCLUDED_PAIRS = [
-    ('Mirae', 'Smallcap'), 
-    ('Franklin', 'Multicap'), 
-    ('DSP', 'Multicap'),
-    ('Kotak', 'Pharmafund'), 
-    ('HDFC', 'Pharmafund'), 
-    ('Mirae', 'Multicap'),
-    ('Mirae', 'Flexicap'), 
-    ('UTI', 'Multicap')
+    ('Mirae', 'Smallcap'), ('Franklin', 'Multicap'), ('DSP', 'Multicap'),
+    ('Kotak', 'Pharmafund'), ('HDFC', 'Pharmafund'), ('Mirae', 'Multicap'),
+    ('Mirae', 'Flexicap'), ('UTI', 'Multicap')
 ]
 
-# --- LOAD & CLEAN DATA ---
+# --- LOAD DATA ---
 @st.cache_data
 def load_data():
     try:
@@ -72,13 +67,13 @@ def load_data():
         mc_results = pd.read_excel("26_Monte_Carlo_EWMA_Results.xlsx")
         forecasts = pd.read_excel("13_Forecasted_Fund_NAV.xlsx")
         
-        # Standardize Strings
+        # Standardization
         rankings.columns = rankings.columns.str.strip()
         mc_results.columns = mc_results.columns.str.strip()
         forecasts.columns = forecasts.columns.str.strip()
         forecasts['Date'] = pd.to_datetime(forecasts['Date'])
         
-        # --- CRITICAL: PURGE EXCLUDED PAIRS ---
+        # Filtering Exclusions
         for amc, scheme in EXCLUDED_PAIRS:
             rankings = rankings[~((rankings['AMC'] == amc) & (rankings['Scheme'] == scheme))]
             mc_results = mc_results[~((mc_results['AMC'] == amc) & (mc_results['Scheme'] == scheme))]
@@ -111,7 +106,7 @@ def calculate_12m_forecast_sip(amc, scheme, monthly_sip):
     return units * final_nav
 
 def generate_bell_curve(curr_data, title_text="Probability Distribution", color_code='#00FFFF'):
-    """Generates a professional Bell Curve with 3 distinct dots."""
+    """Generates a single Bell Curve with 3 Distinct Dots."""
     fig = go.Figure()
 
     # Data
@@ -122,31 +117,32 @@ def generate_bell_curve(curr_data, title_text="Probability Distribution", color_
     x = np.linspace(p10 - sigma, p90 + sigma, 100)
     y = norm.pdf(x, p50, sigma)
     
-    # 1. Curve Line
+    # 1. The Curve Line
     fig.add_trace(go.Scatter(
         x=x, y=y, mode='lines', name='Distribution', 
         fill='tozeroy', line=dict(color=color_code, width=2), opacity=0.4
     ))
 
-    # 2. P10 Dot (Red)
+    # 2. The 3 Dots (Markers)
+    # P10 (Pessimistic) - Red
     fig.add_trace(go.Scatter(
         x=[p10], y=[norm.pdf(p10, p50, sigma)],
         mode='markers+text', text=['P10'], textposition="bottom center",
-        name='Pessimistic', marker=dict(color='#FF4B4B', size=10, symbol='circle')
+        name='Pessimistic', marker=dict(color='#FF4B4B', size=12, symbol='circle')
     ))
 
-    # 3. P50 Dot (White)
+    # P50 (Expected) - Gold/White
     fig.add_trace(go.Scatter(
         x=[p50], y=[norm.pdf(p50, p50, sigma)],
         mode='markers+text', text=['P50'], textposition="top center",
-        name='Expected', marker=dict(color='#FFFFFF', size=10, symbol='circle')
+        name='Expected', marker=dict(color='#FFFFFF', size=12, symbol='circle')
     ))
 
-    # 4. P90 Dot (Green)
+    # P90 (Optimistic) - Green
     fig.add_trace(go.Scatter(
         x=[p90], y=[norm.pdf(p90, p50, sigma)],
         mode='markers+text', text=['P90'], textposition="bottom center",
-        name='Optimistic', marker=dict(color='#00FF00', size=10, symbol='circle')
+        name='Optimistic', marker=dict(color='#00FF00', size=12, symbol='circle')
     ))
 
     # Layout
@@ -181,20 +177,21 @@ if page == "New Investment Analysis":
     if df_mc.empty: st.stop()
 
     # INPUT SECTION
-    with st.container():
-        st.subheader("Investment Parameters")
-        c1, c2, c3, c4 = st.columns(4)
-        
-        with c1:
-            schemes = sorted(df_mc['Scheme'].unique())
-            sel_scheme = st.selectbox("Scheme Category", schemes)
-        with c2:
-            amounts = sorted(df_mc['SIP_Amount'].unique())
-            sel_sip = st.selectbox("Monthly SIP Amount", amounts, index=amounts.index(5000) if 5000 in amounts else 0)
-        with c3:
-            sel_duration = st.selectbox("Duration (Months)", [12, 24, 36])
-        with c4:
-            sel_top_n = st.selectbox("Recommendations Count", [1, 2, 3, 4, 5], index=0)
+    # Note: No st.form here to allow dynamic updates if we wanted, 
+    # but for New Investment, simple columns work fine.
+    st.subheader("Investment Parameters")
+    c1, c2, c3, c4 = st.columns(4)
+    
+    with c1:
+        schemes = sorted(df_mc['Scheme'].unique())
+        sel_scheme = st.selectbox("Scheme Category", schemes)
+    with c2:
+        amounts = sorted(df_mc['SIP_Amount'].unique())
+        sel_sip = st.selectbox("Monthly SIP Amount", amounts, index=amounts.index(5000) if 5000 in amounts else 0)
+    with c3:
+        sel_duration = st.selectbox("Duration (Months)", [12, 24, 36])
+    with c4:
+        sel_top_n = st.selectbox("Recommendations Count", [1, 2, 3, 4, 5], index=0)
 
     if st.button("RUN ANALYSIS", type="primary"):
         st.divider()
@@ -252,34 +249,35 @@ elif page == "Existing Portfolio Rebalancing":
     
     user_portfolio = []
     
-    with st.form("rebalance_form"):
-        st.subheader("Portfolio Composition")
-        for i in range(num_funds):
-            with st.expander(f"Holding #{i+1}", expanded=True):
-                c1, c2, c3, c4 = st.columns(4)
-                
-                # 1. Select Scheme
-                sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
-                
-                # 2. DYNAMIC DEPENDENCY: Only show AMCs that exist for this Scheme
-                # This explicitly handles your "Non-existent pairs" requirement
-                valid_amcs_for_scheme = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
-                
-                if not valid_amcs_for_scheme:
-                    amc = None
-                    st.error(f"No valid AMCs found for scheme: {sch}")
-                else:
-                    amc = c2.selectbox("AMC", valid_amcs_for_scheme, key=f"a_{i}")
-                
-                amt = c3.selectbox("SIP Amount", sorted(df_mc['SIP_Amount'].unique()), index=9, key=f"m_{i}")
-                ten = c4.selectbox("Tenure", [12, 24, 36], index=1, key=f"t_{i}")
-                
-                if amc:
-                    user_portfolio.append({'id': i+1, 'Scheme': sch, 'AMC': amc, 'Amount': amt, 'Tenure': ten})
-        
-        submitted = st.form_submit_button("ANALYZE & REBALANCE", type="primary")
-
-    if submitted:
+    # --- CRITICAL CHANGE: NO FORM WRAPPER FOR INPUTS ---
+    # This allows the 'Scheme' selection to INSTANTLY update the 'AMC' list.
+    
+    st.subheader("Portfolio Composition")
+    for i in range(num_funds):
+        with st.expander(f"Holding #{i+1}", expanded=True):
+            c1, c2, c3, c4 = st.columns(4)
+            
+            # 1. Select Scheme
+            sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
+            
+            # 2. DYNAMIC FILTER: Get AMCs strictly for this Scheme from cleaned data
+            # Since load_data removed EXCLUDED_PAIRS, this list will NEVER contain them.
+            valid_amcs_for_scheme = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
+            
+            if not valid_amcs_for_scheme:
+                amc = None
+                c2.error(f"No AMCs found.")
+            else:
+                amc = c2.selectbox("AMC", valid_amcs_for_scheme, key=f"a_{i}")
+            
+            amt = c3.selectbox("SIP Amount", sorted(df_mc['SIP_Amount'].unique()), index=9, key=f"m_{i}")
+            ten = c4.selectbox("Tenure", [12, 24, 36], index=1, key=f"t_{i}")
+            
+            if amc:
+                user_portfolio.append({'id': i+1, 'Scheme': sch, 'AMC': amc, 'Amount': amt, 'Tenure': ten})
+    
+    # Button is separate
+    if st.button("ANALYZE & REBALANCE", type="primary"):
         st.divider()
         st.subheader("Rebalancing Analysis Report")
         
@@ -318,28 +316,28 @@ elif page == "Existing Portfolio Rebalancing":
                 best_amc = fund['AMC']
                 b_p50, b_p10, b_p90 = c_p50, c_p10, c_p90
 
-            # 3. LOGIC: Rebalance Check
+            # 3. LOGIC: Compare Current vs Best
+            invested = fund['Amount'] * fund['Tenure']
             gain = b_p50 - c_p50
             
             # Rule: Only rebalance if NOT best AND gain > 0
             if fund['AMC'] != best_amc and gain > 0:
                 action = "REBALANCE"
-                action_color = "#FF4B4B" # Red
+                action_color = "#FF4B4B" # Red warning
                 display_best_amc = best_amc
                 display_gain = format_currency(gain)
             else:
                 action = "HOLD"
-                action_color = "#00FFFF" # Cyan
-                gain = 0
+                action_color = "#00FFFF" # Cyan success
+                gain = 0 
                 display_best_amc = "Not Required"
                 display_gain = "-"
-                # Correct the total: If holding, optimized value = current value
-                b_p50 = c_p50
+                b_p50 = c_p50 # No optimized gain if holding
 
             total_current_val += c_p50
             total_optimized_val += b_p50
 
-            # 4. DISPLAY
+            # 4. DISPLAY: Holding Header
             st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']} - {fund['AMC']}")
             
             # Metrics
@@ -359,10 +357,10 @@ elif page == "Existing Portfolio Rebalancing":
                     rec_data = {'AMC': best_amc, 'P50': b_p50, 'P10': b_p10, 'P90': b_p90}
                     st.plotly_chart(generate_bell_curve(rec_data, title_text=f"Proposed: {best_amc}", color_code='#00FF00'), use_container_width=True)
             else:
-                # Show Only Current (Centered) - No Comparison Needed
+                # Show Only Current (Centered)
                 curr_data = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
                 st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Current Performance: {fund['AMC']}", color_code='#00FFFF'), use_container_width=True)
-                st.caption("Fund is performing optimally based on AHP Ranking & Monte Carlo Simulations.")
+                st.caption("No rebalancing required.")
 
             st.markdown("---")
 
@@ -376,14 +374,15 @@ elif page == "Existing Portfolio Rebalancing":
                 "Potential Gain": display_gain
             })
 
-        # 6. FINAL CONSOLIDATION
+        # 6. FINAL SUMMARY SECTION
         st.subheader("Consolidated Portfolio Report")
         
+        # Summary Table
         if summary_table_data:
             summary_df = pd.DataFrame(summary_table_data)
             st.dataframe(summary_df, use_container_width=True)
 
-        # Simple Bar Chart (Wealth Impact)
+        # TOTAL GAIN GRAPHIC (SIMPLE BAR CHART)
         st.subheader("Wealth Impact Analysis")
         bar_data = pd.DataFrame({
             "State": ["Current Portfolio", "Optimized Portfolio"],
@@ -397,7 +396,7 @@ elif page == "Existing Portfolio Rebalancing":
         fig_bar.update_layout(template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
         st.plotly_chart(fig_bar, use_container_width=True)
             
-        # Download
+        # Download Button
         csv = convert_df_to_csv(summary_df)
         st.download_button(
             label="DOWNLOAD REPORT (CSV)",
