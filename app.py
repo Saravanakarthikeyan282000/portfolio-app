@@ -30,6 +30,20 @@ st.markdown("""
     /* Divider */
     hr { border-color: #00FFFF; margin-top: 2rem; margin-bottom: 2rem; opacity: 0.3; }
     
+    /* Footer */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #0e1117;
+        color: #00FFFF;
+        text-align: center;
+        padding: 10px;
+        font-weight: bold;
+        border-top: 1px solid #464b5c;
+    }
+    
     /* Expander Styling */
     .streamlit-expanderHeader { color: #ffffff; font-weight: bold; background-color: #262730; }
     </style>
@@ -145,6 +159,23 @@ def generate_bell_curve(curr_data, title_text="Probability Distribution", color_
     )
     return fig
 
+def generate_waterfall_chart(current_val, gain, optimized_val):
+    fig = go.Figure(go.Waterfall(
+        name = "20", orientation = "v",
+        measure = ["relative", "relative", "total"],
+        x = ["Current Portfolio", "Rebalancing Gain", "Optimized Portfolio"],
+        textposition = "outside",
+        text = [f"{current_val/1000:.1f}k", f"+{gain/1000:.1f}k", f"{optimized_val/1000:.1f}k"],
+        y = [current_val, gain, optimized_val],
+        connector = {"line":{"color":"rgb(63, 63, 63)"}},
+        decreasing = {"marker":{"color":"#FF4B4B"}},
+        increasing = {"marker":{"color":"#00FFFF"}},
+        totals = {"marker":{"color":"#2ecc71"}}
+    ))
+    fig.update_layout(title="Value Creation Bridge", template="plotly_dark", showlegend=False, 
+                      plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', height=350)
+    return fig
+
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
@@ -178,6 +209,7 @@ if page == "New Investment Analysis":
             sel_top_n = st.selectbox("Recommendations Count", [1, 2, 3, 4, 5], index=0)
 
     if st.button("RUN ANALYSIS", type="primary"):
+        st.balloons() # Animation on click
         st.divider()
         
         # LOGIC: Filter by Rank
@@ -239,25 +271,36 @@ elif page == "Existing Portfolio Rebalancing":
             with st.expander(f"Holding #{i+1}", expanded=True):
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # Filter Schemes
+                # 1. Select Scheme FIRST
                 sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
                 
-                # Filter AMCs (Excluded pairs are already removed from df_mc in load_data)
-                avail_amcs = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
-                amc = c2.selectbox("AMC", avail_amcs, key=f"a_{i}")
+                # 2. Dynamic AMC Filter: Show ONLY AMCs that exist for the selected scheme
+                # This explicitly prevents selecting non-existing pairs like Mirae*Smallcap
+                valid_amcs_for_scheme = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
+                
+                if not valid_amcs_for_scheme:
+                    st.error(f"No data available for {sch}")
+                    amc = None
+                else:
+                    amc = c2.selectbox("AMC", valid_amcs_for_scheme, key=f"a_{i}")
                 
                 amt = c3.selectbox("SIP Amount", sorted(df_mc['SIP_Amount'].unique()), index=9, key=f"m_{i}")
                 ten = c4.selectbox("Tenure", [12, 24, 36], index=1, key=f"t_{i}")
                 
-                user_portfolio.append({'id': i+1, 'Scheme': sch, 'AMC': amc, 'Amount': amt, 'Tenure': ten})
+                if amc:
+                    user_portfolio.append({'id': i+1, 'Scheme': sch, 'AMC': amc, 'Amount': amt, 'Tenure': ten})
         
         submitted = st.form_submit_button("ANALYZE & REBALANCE", type="primary")
 
     if submitted:
+        st.balloons() # Animation on click
         st.divider()
         st.subheader("Rebalancing Analysis Report")
         
-        summary_table_data = [] # For final display
+        summary_table_data = [] 
+        total_current_val = 0
+        total_optimized_val = 0
+        total_invested = 0
         
         for fund in user_portfolio:
             # 1. FETCH CURRENT FUND DATA
@@ -273,7 +316,6 @@ elif page == "Existing Portfolio Rebalancing":
 
             # 2. IDENTIFY TOP RANKED ALTERNATIVE
             try:
-                # Sort rankings to find #1 for this scheme
                 top_rank_row = df_ranks[df_ranks['Scheme'] == fund['Scheme']].sort_values('Final_Score', ascending=False).iloc[0]
                 best_amc = top_rank_row['AMC']
                 
@@ -295,14 +337,24 @@ elif page == "Existing Portfolio Rebalancing":
             invested = fund['Amount'] * fund['Tenure']
             gain = b_p50 - c_p50
             
-            # Logic: If Current is NOT the best, and Best offers gain -> Rebalance
+            # STRICT REBALANCE LOGIC
             if fund['AMC'] != best_amc and gain > 0:
                 action = "REBALANCE"
                 action_color = "#FF4B4B" # Red warning
+                display_best_amc = best_amc
+                display_gain = format_currency(gain)
             else:
                 action = "HOLD"
                 action_color = "#00FFFF" # Cyan success
-                gain = 0 # No gain if holding
+                gain = 0 
+                display_best_amc = "Not Required"
+                display_gain = "-"
+                # Ensure totals reflect the hold strategy (no optimized gain added, just current)
+                b_p50 = c_p50
+
+            total_invested += invested
+            total_current_val += c_p50
+            total_optimized_val += b_p50
 
             # 4. DISPLAY: Holding Header
             st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']} - {fund['AMC']}")
@@ -310,25 +362,26 @@ elif page == "Existing Portfolio Rebalancing":
             # Metrics
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("Action", action)
-            col_m2.metric("Best Alternative", best_amc)
-            col_m3.metric("Potential Gain", format_currency(gain))
+            col_m2.metric("Best Alternative", display_best_amc)
+            col_m3.metric("Potential Gain", display_gain)
 
             # 5. SIDEWAYS GRAPHS (Comparison)
-            col_g1, col_g2 = st.columns(2)
+            # If REBALANCE: Show Side-by-Side
+            # If HOLD: Show ONLY Current
             
-            with col_g1:
-                # Current Graph (Red if Rebalance, Cyan if Hold)
-                curr_data = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
-                graph_color = '#FF4B4B' if action == "REBALANCE" else '#00FFFF'
-                st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Current: {fund['AMC']}", color_code=graph_color), use_container_width=True)
-                
-            with col_g2:
-                # Recommended Graph (Always Cyan/Green) - Only show if different
-                if action == "REBALANCE":
+            if action == "REBALANCE":
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    curr_data = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
+                    st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Current: {fund['AMC']}", color_code='#FF4B4B'), use_container_width=True)
+                with col_g2:
                     rec_data = {'AMC': best_amc, 'P50': b_p50, 'P10': b_p10, 'P90': b_p90}
                     st.plotly_chart(generate_bell_curve(rec_data, title_text=f"Proposed: {best_amc}", color_code='#00FF00'), use_container_width=True)
-                else:
-                    st.info("Your current fund is the top performer in this category.")
+            else:
+                # Only show one centered graph for HOLD
+                curr_data = {'AMC': fund['AMC'], 'P50': c_p50, 'P10': c_p10, 'P90': c_p90}
+                st.plotly_chart(generate_bell_curve(curr_data, title_text=f"Current Performance: {fund['AMC']}", color_code='#00FFFF'), use_container_width=True)
+                st.caption("No rebalancing required. Your fund is performing optimally.")
 
             st.markdown("---")
 
@@ -338,22 +391,36 @@ elif page == "Existing Portfolio Rebalancing":
                 "Current AMC": fund['AMC'],
                 "Scheme": fund['Scheme'],
                 "Action": action,
-                "Rebalance To": best_amc if action == "REBALANCE" else "-",
-                "Potential Gain": format_currency(gain)
+                "Rebalance To": display_best_amc,
+                "Potential Gain": display_gain
             })
 
-        # 6. FINAL SUMMARY TABLE
-        st.subheader("Final Portfolio Summary")
+        # 6. FINAL SUMMARY SECTION
+        st.subheader("Consolidated Portfolio Report")
+        
+        # Summary Table
         if summary_table_data:
             summary_df = pd.DataFrame(summary_table_data)
             st.dataframe(summary_df, use_container_width=True)
+
+        # TOTAL GAIN GRAPHIC
+        st.subheader("Value Creation Analysis")
+        total_gain = total_optimized_val - total_current_val
+        st.plotly_chart(generate_waterfall_chart(total_current_val, total_gain, total_optimized_val), use_container_width=True)
             
-            # Download Button
-            csv = convert_df_to_csv(summary_df)
-            st.download_button(
-                label="DOWNLOAD REPORT (CSV)",
-                data=csv,
-                file_name='portfolio_rebalancing_report.csv',
-                mime='text/csv',
-                type="primary"
-            )
+        # Download Button
+        csv = convert_df_to_csv(summary_df)
+        st.download_button(
+            label="DOWNLOAD REPORT (CSV)",
+            data=csv,
+            file_name='portfolio_rebalancing_report.csv',
+            mime='text/csv',
+            type="primary"
+        )
+
+# --- FOOTER ---
+st.markdown("""
+    <div class="footer">
+        Designed by Mr.Saravana Karthikeyan K
+    </div>
+""", unsafe_allow_html=True)
