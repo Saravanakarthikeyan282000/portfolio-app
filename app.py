@@ -11,21 +11,42 @@ st.set_page_config(page_title="Portfolio Optimization System", layout="wide")
 # --- PROFESSIONAL STYLING (DARK MODE + CYAN) ---
 st.markdown("""
     <style>
+    /* Global Text Color */
     body { color: #e0e0e0; background-color: #0e1117; }
+    
+    /* Headers - Cyan Accent */
     h1, h2, h3, h4 { color: #00FFFF !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    
+    /* Metric Boxes */
     div[data-testid="stMetricValue"] { color: #00FFFF !important; font-weight: bold; }
     div[data-testid="stMetricLabel"] { color: #b0b0b0 !important; }
     .stMetric { background-color: #262730; border: 1px solid #464b5c; border-radius: 5px; padding: 10px; }
+    
+    /* Input Fields */
     .stSelectbox label, .stNumberInput label { color: #00FFFF !important; font-weight: bold; }
+    
+    /* Dataframes */
     div[data-testid="stDataFrame"] { border: 1px solid #464b5c; }
+    
+    /* Divider */
     hr { border-color: #00FFFF; margin-top: 2rem; margin-bottom: 2rem; opacity: 0.3; }
+    
+    /* Footer */
     .footer {
         position: fixed;
-        left: 0; bottom: 0; width: 100%;
-        background-color: #0e1117; color: #00FFFF;
-        text-align: center; padding: 10px; font-weight: bold;
-        border-top: 1px solid #464b5c; z-index: 100;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #0e1117;
+        color: #00FFFF;
+        text-align: center;
+        padding: 10px;
+        font-weight: bold;
+        border-top: 1px solid #464b5c;
+        z-index: 100;
     }
+    
+    /* Expander Styling */
     .streamlit-expanderHeader { color: #ffffff; font-weight: bold; background-color: #262730; }
     </style>
 """, unsafe_allow_html=True)
@@ -45,19 +66,22 @@ def load_data():
         mc_results = pd.read_excel("26_Monte_Carlo_EWMA_Results.xlsx")
         forecasts = pd.read_excel("13_Forecasted_Fund_NAV.xlsx")
         
-        # Standardize Strings
+        # 1. Clean Column Names
         rankings.columns = rankings.columns.str.strip()
         mc_results.columns = mc_results.columns.str.strip()
         forecasts.columns = forecasts.columns.str.strip()
         
-        # --- CRITICAL: FORCE INTEGER TYPES FOR ACCURATE LOOKUP ---
-        # This prevents "5000" (text) vs 5000 (number) mismatches
+        # 2. Clean Data Content (Strip Spaces)
+        mc_results['Scheme'] = mc_results['Scheme'].astype(str).str.strip()
+        mc_results['AMC'] = mc_results['AMC'].astype(str).str.strip()
+        
+        # 3. Force Numbers to Integers (Prevents lookup errors)
         mc_results['SIP_Amount'] = pd.to_numeric(mc_results['SIP_Amount'], errors='coerce').fillna(0).astype(int)
         mc_results['Tenure_Months'] = pd.to_numeric(mc_results['Tenure_Months'], errors='coerce').fillna(0).astype(int)
         
         forecasts['Date'] = pd.to_datetime(forecasts['Date'])
         
-        # Remove Exclusions
+        # 4. Filter Exclusions (The Critical Step)
         for amc, scheme in EXCLUDED_PAIRS:
             rankings = rankings[~((rankings['AMC'] == amc) & (rankings['Scheme'] == scheme))]
             mc_results = mc_results[~((mc_results['AMC'] == amc) & (mc_results['Scheme'] == scheme))]
@@ -65,7 +89,7 @@ def load_data():
             
         return rankings, mc_results, forecasts
     except FileNotFoundError as e:
-        st.error(f"System Error: Required data file not found ({e}).")
+        st.error(f"System Error: Required data file not found ({e}). Contact administrator.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 df_ranks, df_mc, df_forecast = load_data()
@@ -108,15 +132,15 @@ def generate_bell_curve(curr_data, title_text="Probability Distribution", color_
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- NAVIGATION ---
+# --- MAIN NAVIGATION ---
 st.sidebar.title("System Navigation")
-page = st.sidebar.radio("Select Module:", ["New Investment Analysis", "Existing Portfolio Rebalancing"])
+page = st.sidebar.radio("Select Module:", ["First-Time Investor", "Existing Portfolio"])
 
 # =========================================================
 # MODULE 1: NEW INVESTMENT
 # =========================================================
-if page == "New Investment Analysis":
-    st.title("New Investment Analysis")
+if page == "First-Time Investor":
+    st.title("First-Time Investor")
     st.markdown("Generate optimized portfolio recommendations.")
     if df_mc.empty: st.stop()
 
@@ -163,10 +187,10 @@ if page == "New Investment Analysis":
                     st.markdown("---")
 
 # =========================================================
-# MODULE 2: EXISTING PORTFOLIO REBALANCING
+# MODULE 2: EXISTING PORTFOLIO 
 # =========================================================
-elif page == "Existing Portfolio Rebalancing":
-    st.title("Existing Portfolio Rebalancing")
+elif page == "Existing Portfolio":
+    st.title("Existing Portfolio")
     st.markdown("Comparative analysis: Checks if a better performing fund exists for your exact parameters.")
     if df_mc.empty: st.stop()
 
@@ -174,18 +198,22 @@ elif page == "Existing Portfolio Rebalancing":
     user_portfolio = []
     
     st.subheader("Portfolio Composition")
+    # NO FORM -> This enables real-time updates for Dropdowns
     for i in range(num_funds):
         with st.expander(f"Holding #{i+1}", expanded=True):
             c1, c2, c3, c4 = st.columns(4)
+            
+            # 1. Select Scheme
             sch = c1.selectbox("Scheme", sorted(df_mc['Scheme'].unique()), key=f"s_{i}")
             
-            # Dynamic Filter: Only valid AMCs
-            valid_amcs = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
-            if not valid_amcs:
+            # 2. DYNAMIC FILTER: Get AMCs strictly for this Scheme from cleaned data
+            valid_amcs_for_scheme = sorted(df_mc[df_mc['Scheme'] == sch]['AMC'].unique())
+            
+            if not valid_amcs_for_scheme:
                 amc = None
                 c2.error("No AMCs found.")
             else:
-                amc = c2.selectbox("AMC", valid_amcs, key=f"a_{i}")
+                amc = c2.selectbox("AMC", valid_amcs_for_scheme, key=f"a_{i}")
             
             amt = c3.selectbox("SIP Amount", sorted(df_mc['SIP_Amount'].unique()), index=9, key=f"m_{i}")
             ten = c4.selectbox("Tenure", [12, 24, 36], index=1, key=f"t_{i}")
@@ -201,7 +229,7 @@ elif page == "Existing Portfolio Rebalancing":
         total_optimized_val = 0
         
         for fund in user_portfolio:
-            # 1. FETCH CURRENT FUND PERFORMANCE (Use exact Amount/Tenure inputs)
+            # 1. FETCH CURRENT FUND DATA
             if fund['Tenure'] == 12:
                 c_p50 = calculate_12m_forecast_sip(fund['AMC'], fund['Scheme'], fund['Amount'])
                 c_p10, c_p90 = c_p50 * 0.95, c_p50 * 1.05
@@ -209,14 +237,14 @@ elif page == "Existing Portfolio Rebalancing":
                 row = df_mc[
                     (df_mc['AMC'] == fund['AMC']) & 
                     (df_mc['Scheme'] == fund['Scheme']) & 
-                    (df_mc['SIP_Amount'] == int(fund['Amount'])) &    # Strict Integer Match
-                    (df_mc['Tenure_Months'] == int(fund['Tenure']))   # Strict Integer Match
+                    (df_mc['SIP_Amount'] == int(fund['Amount'])) &   
+                    (df_mc['Tenure_Months'] == int(fund['Tenure']))
                 ]
                 c_p50 = row.iloc[0]['P50_Corpus'] if not row.empty else 0
                 c_p10 = row.iloc[0]['P10_Corpus'] if not row.empty else 0
                 c_p90 = row.iloc[0]['P90_Corpus'] if not row.empty else 0
 
-            # 2. FIND THE WINNER (For this specific Scheme + Amount + Tenure)
+            # 2. FIND THE WINNER (Dynamic Calculation based on Amount & Tenure)
             best_amc = fund['AMC']
             b_p50, b_p10, b_p90 = c_p50, c_p10, c_p90
             
@@ -231,8 +259,7 @@ elif page == "Existing Portfolio Rebalancing":
                         b_p50 = val
                         b_p10, b_p90 = val * 0.95, val * 1.05
             else:
-                # Filter MC data for ALL AMCs matching this Scheme + Amount + Tenure
-                # This ensures if you change Amount, you get the winner for the NEW amount.
+                # DYNAMIC LOOKUP: Find max P50 for this SPECIFIC Amount/Tenure
                 cohort = df_mc[
                     (df_mc['Scheme'] == fund['Scheme']) & 
                     (df_mc['SIP_Amount'] == int(fund['Amount'])) & 
@@ -240,7 +267,6 @@ elif page == "Existing Portfolio Rebalancing":
                 ]
                 
                 if not cohort.empty:
-                    # Find the AMC with the MAX P50 in this specific cohort
                     best_row = cohort.loc[cohort['P50_Corpus'].idxmax()]
                     if best_row['P50_Corpus'] > c_p50:
                         best_amc = best_row['AMC']
@@ -269,6 +295,8 @@ elif page == "Existing Portfolio Rebalancing":
 
             # 4. DISPLAY
             st.markdown(f"#### Holding #{fund['id']}: {fund['Scheme']} - {fund['AMC']}")
+            st.caption(f"Analysis parameters: {format_currency(fund['Amount'])} SIP for {fund['Tenure']} Months") # Explicit Confirmation
+            
             c_m1, c_m2, c_m3 = st.columns(3)
             c_m1.metric("Recommendation", action)
             c_m2.metric("Best Alternative", display_best_amc)
